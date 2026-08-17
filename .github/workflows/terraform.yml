@@ -1,0 +1,114 @@
+name: Terraform Azure Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform Action"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: "1.8.0"
+  TF_WORKING_DIR: "environment/preprod"
+
+jobs:
+
+  terraform:
+    name: Terraform ${{ github.event.inputs.action || 'plan' }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+
+      # -----------------------------------------
+      # 1. Checkout Repository
+      # -----------------------------------------
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+
+      # -----------------------------------------
+      # 2. Setup Terraform
+      # -----------------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+
+      # -----------------------------------------
+      # 3. Azure Login using OIDC / Federated Credential
+      # -----------------------------------------
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: "5e2415b0-5c8f-434d-a9d2-a8ee6fdafa5c"
+          tenant-id: "1ce567c7-283d-4272-b4bd-8292e9e4cd20"
+          subscription-id: "617408c3-ce8d-4f34-a887-db4cd7d25b4e"
+
+
+      # -----------------------------------------
+      # 4. Verify Azure CLI Login
+      # -----------------------------------------
+      - name: Verify Azure Login
+        run: |
+          az account show
+          az account list --output table
+
+
+      # -----------------------------------------
+      # 5. Terraform Format Check
+      # -----------------------------------------
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+
+      # -----------------------------------------
+      # 6. Terraform Init
+      # -----------------------------------------
+      - name: Terraform Init
+        run: terraform init
+
+
+      # -----------------------------------------
+      # 7. Terraform Validate
+      # -----------------------------------------
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # -----------------------------------------
+      # 8. Terraform Plan
+      # -----------------------------------------
+      - name: Terraform Plan
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'plan'
+        run: terraform plan
+
+
+      # -----------------------------------------
+      # 9. Terraform Apply
+      # -----------------------------------------
+      - name: Terraform Apply
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
+
